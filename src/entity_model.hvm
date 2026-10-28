@@ -1,0 +1,206 @@
+# Executable procedural formulas, compiled to entity_program.rs. All values are
+# vectors; scalar values use equal xyz lanes. No model/animation samples exist.
+def skeleton(travel, movement, attack_left, scale):
+    active = min(max(movement * 3, 0), 1)
+    phase = travel / (1.15 * max(scale, 0.1)) * (pi * 2)
+    elapsed = 0.4 - attack_left
+    extension = 0
+    if 0 < attack_left:
+        if elapsed < 0.06:
+            extension = -0.12 * smooth(elapsed / 0.06)
+        else:
+            if elapsed < 0.10:
+                extension = -0.12 + 0.5 * smooth((elapsed - 0.06) / 0.04)
+            else:
+                extension = 0.38 * (1 - smooth((elapsed - 0.10) / 0.30))
+    bob = cos(phase * 2) * 0.035 * active
+    rig[0] = vec(sin(phase) * 0.035 * active, 1.28 + bob, 0)
+    rig[1] = vec(-sin(phase) * 0.04 * active, 2.32 + bob, 0.08 * active + extension)
+    rig[2] = rig[1] + vec(0.02, 0.31, 0.05)
+    rig[3] = rig[2] + vec(-0.04, 0.32, 0.035)
+    for i in range(2):
+        sign = -1 if i == 0 else 1
+        cycle = rem(travel / (1.15 * max(scale, 0.1)) + i * 0.5, 1)
+        span = 1.15 * 0.62
+        if cycle < 0.62:
+            z = span * 0.5 - cycle / 0.62 * span
+            lift = 0
+        else:
+            t = (cycle - 0.62) / 0.38
+            z = -span * 0.5 + span * smooth(t)
+            lift = sin(pi * t) * 0.19
+        if 0 < attack_left:
+            tip = vec(sign * 0.29, 0.035, sign * 0.14)
+        else:
+            tip = vec(sign * 0.22, 0.035 + lift * active, z * active)
+        root = rig[0] + vec(sign * 0.13, 0, 0)
+        rig[4 + i * 3] = root
+        rig[5 + i * 3] = joint(root, tip, 0.77, 0.75, vec(sign * 0.07, 0, 1))
+        rig[6 + i * 3] = tip
+        shoulder = rig[1] + vec(sign * 0.31, 0.09, 0)
+        swing = -sin(phase + i * pi) * 0.26 * active
+        rest = vec(sign * (0.48 + 0.03 * i), 0.58 + bob, swing - 0.025)
+        windup = vec(sign * 0.51, 2.05, extension - 0.47)
+        strike = vec(sign * 0.10, 1.95 if i == 0 else 2.16, 0.85 if i == 0 else 1.18)
+        tip = rest
+        if 0 < attack_left:
+            if elapsed < 0.06:
+                tip = lerp(rest, windup, smooth(elapsed / 0.06))
+            else:
+                if elapsed < 0.10:
+                    tip = lerp(windup, strike, smooth((elapsed - 0.06) / 0.04))
+                else:
+                    tip = lerp(strike, rest, smooth((elapsed - 0.10) / 0.30))
+        rig[10 + i * 3] = shoulder
+        rig[11 + i * 3] = joint(shoulder, tip, 1, 1.03, vec(sign, 0.05, -0.35))
+        rig[12 + i * 3] = tip
+
+def transform(p):
+    x = dot(p, vec(1, 0, 0))
+    y = dot(p, vec(0, 1, 0))
+    z = dot(p, vec(0, 0, 1))
+    shake = rage * pow(min(max(y / 3, 0), 1), 2)
+    x = x * (1 + shake * 0.18) + shake * sin(time * 63 + y * 7) * 0.065
+    y = y + shake * sin(time * 77 + x * 6) * 0.022
+    z = z + shake * cos(time * 51 + y * 4) * 0.05
+    return position + vec(x * cyaw + z * syaw, y, -x * syaw + z * cyaw) * scale
+
+def bundle(a, b, width, strands, seed):
+    direction = norm(b - a)
+    side = norm(cross(direction, vec(0, 0, 1)))
+    up = cross(direction, side)
+    for strand in range(strands):
+        phase = strand * (pi * 2) / strands + seed
+        start((0.018 + 0.005 * (sin(phase) * 0.5 + 0.5)) * scale)
+        for i in range(7):
+            t = i / 6
+            angle = phase + t * 6
+            radius = width * (0.72 + 0.22 * sin(phase * 1.3)) * (0.72 + 0.28 * sin(pi * t))
+            point(transform(lerp(a, b, t) + (side * cos(angle) + up * sin(angle)) * radius))
+
+def draw(position, yaw, time, seed, scale, travel, movement, attack_left, rage):
+    rage = min(max(rage, 0), 1)
+    syaw = sin(yaw)
+    cyaw = cos(yaw)
+    personality = seed * 0.013
+    # Negative scale selects the same particle cloud without drawing the entity.
+    if 0 < scale:
+        unused = skeleton(travel, movement, attack_left, scale)
+        for strand in range(24):
+            phase = strand * 2.399 + personality
+            start((0.021 + 0.004 * abs(sin(phase))) * scale)
+            for i in range(11):
+                t = i / 10
+                center = lerp(rig[0], rig[1], t / 0.72) if t < 0.72 else lerp(rig[1], rig[2], (t - 0.72) / 0.28)
+                spread = (0.12 + 0.22 * t if t < 0.5 else 0.23 - (t - 0.5) * 0.26) * (1 + rage * 0.45)
+                angle = phase + t * 8
+                point(transform(center + vec(cos(angle) * spread, 0.013 * sin(angle * 2), sin(angle) * spread * 0.48)))
+        for limb in range(4):
+            arm = 1 if 1 < limb else 0
+            i = limb - arm * 2
+            root = rig[4 + limb * 3]
+            mid = rig[5 + limb * 3]
+            tip = rig[6 + limb * 3]
+            unused = bundle(root, mid, 0.075 if arm else 0.048, 6 if arm else 5, 1.8 + i if arm else i)
+            unused = bundle(mid, tip, 0.048 if arm else 0.035, 6 if arm else 5, 0.7 + i if arm else i + 1.4)
+            sign = -1 if i == 0 else 1
+            if arm:
+                for finger in range(4):
+                    first = tip + vec((finger - 1.5) * 0.032, 0, 0)
+                    curl = vec(sign * 0.035, -0.12, 0.04)
+                    end = first + vec(sign * 0.07, -0.29, 0.13 if 0 < attack_left else -0.035)
+                    start(0.014 * scale)
+                    point(transform(first))
+                    point(transform(first + curl))
+                    point(transform(end))
+            else:
+                toe = tip + vec(sign * 0.045, -0.015, 0.17)
+                tube(transform(tip), transform(toe), 0.045 * scale, 0.018 * scale)
+        unused = bundle(rig[2], rig[3], 0.045, 4, 0)
+        for strand in range(20):
+            angle = strand * (pi * 2) / 20
+            cx = head_curve(cos(angle))
+            cy = head_curve(sin(angle))
+            start(0.018 * scale)
+            for i in range(6):
+                t = i / 5
+                depth = -0.19 + t * 0.34
+                taper = 0.86 + 0.12 * sin(t * pi)
+                point(transform(rig[3] + vec(cx * 0.22 * taper, cy * 0.14 * taper, depth) + vec(0.014 * sin(angle + t * 8), 0.007 * sin(angle * 3 + t * 6), 0)))
+        for ring in range(2):
+            start(0.022 * scale)
+            for i in range(21):
+                a = i * (pi * 2) / 20
+                point(transform(rig[3] + vec(head_curve(cos(a)) * 0.22, head_curve(sin(a)) * 0.14, ring * 0.11)))
+        for i in range(10):
+            phase = i * 2.37 + personality
+            first = rig[1] + vec(sin(phase) * 0.19, -i * 0.09, 0.02)
+            fan = vec(sin(phase), 0.9 + 0.35 * cos(phase), cos(phase)) * rage
+            middle = first + vec(sin(time * 1.7 + phase) * 0.10, -0.30, 0.04 * cos(phase)) + fan * 0.32
+            end = middle + vec(sin(time * 1.7 + phase + 0.7) * 0.11, -0.30, 0.05) + fan * 0.42 + vec(sin(time * 53 + phase), 0, cos(time * 67 + phase)) * rage * 0.07
+            start((0.011 + rage * 0.007) * scale)
+            point(transform(first))
+            point(transform(middle))
+            point(transform(end))
+    scale = abs(scale)
+    if 0 < rage:
+        for i in range(36):
+            phase = i * 2.399 + personality
+            angle = phase + time * (2 + rem(i, 3) * 0.35)
+            radius = 0.65 + 0.24 * sin(phase + time * 1.8)
+            y = 0.35 + rem(i * 0.173 + time * 0.25, 1) * 2.60
+            at = transform(vec(sin(angle) * radius, y, cos(angle) * radius))
+            size = (0.060 + 0.025 * abs(sin(phase + time * 7))) * scale * rage / 3
+            particle(at, size)
+
+def head_curve(x):
+    return pow(abs(x), 0.55) * (-1 if x < 0 else 1)
+
+
+def joint(a, b, l1, l2, pole):
+    delta = b - a
+    length = min(max(sqrt(dot(delta, delta)), 0.001), l1 + l2 - 0.001)
+    direction = norm(delta)
+    along = (l1 * l1 - l2 * l2 + length * length) / (2 * length)
+    height = sqrt(max(l1 * l1 - along * along, 0))
+    bend = norm(pole - direction * dot(pole, direction))
+    return a + direction * along + bend * height
+
+def tube(a, b, radius, end_radius):
+    axis = norm(b - a)
+    pole = vec(1, 0, 0) if 0.9 < abs(dot(axis, vec(0, 1, 0))) else vec(0, 1, 0)
+    right = norm(cross(axis, pole))
+    up = cross(axis, right)
+    p = right
+    for i in range(8):
+        u = (i + 1) * (pi * 2) / 8
+        q = right * cos(u) + up * sin(u)
+        quad(a + p * radius, a + q * radius, b + q * end_radius, b + p * end_radius)
+        p = q
+
+def start(radius):
+    rig[17] = radius
+    rig[18] = 0
+
+def point(p):
+    if rig[18]:
+        unused = tube(rig[16], p, rig[17], rig[17] * 0.95)
+    rig[16] = p
+    rig[18] = 1
+
+
+def norm(p):
+    return p * (1 / max(sqrt(dot(p, p)), 0.00000001))
+
+def lerp(a, b, t):
+    return a * (1 - t) + b * t
+
+def smooth(t):
+    t = min(max(t, 0), 1)
+    return t * t * (3 - 2 * t)
+
+def particle(at, size):
+    v = vec(0, size, 0)
+    for i in range(2):
+        u = vec(size, 0, 0) if i == 0 else vec(0, 0, size)
+        rage_quad(at - u - v, at + u - v, at + u + v, at - u + v)

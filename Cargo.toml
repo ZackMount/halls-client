@@ -1,0 +1,67 @@
+[package]
+name = "halls"
+version = "1.0.1"
+edition = "2024"
+rust-version = "1.88"
+description = "A retro first-person terminal horror maze"
+license = "MIT"
+default-run = "halls"
+autobins = false
+
+[features]
+tools = []
+
+[[bin]]
+name = "halls"
+path = "src/main.rs"
+
+[[bin]]
+name = "halls-tools"
+path = "src/bin/halls-tools.rs"
+required-features = ["tools"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+panic = "abort"
+codegen-units = 1
+strip = "symbols"
+
+[[test]]
+name = "navigation"
+required-features = ["tools"]
+
+[[test]]
+name = "proof_buffer"
+required-features = ["tools"]
+
+[[example]]
+name = "proof_fixture"
+required-features = ["tools"]
+
+[[example]]
+name = "crypto_probe"
+required-features = ["tools"]
+
+[[example]]
+name = "clock_fixture"
+required-features = ["tools"]
+
+[[example]]
+name = "battery_fixture"
+required-features = ["tools"]
+
+[[example]]
+name = "judge_fixture"
+required-features = ["tools"]
+
+[[example]]
+name = "judge_model"
+required-features = ["tools"]
+
+[[example]]
+name = "recording_memory"
+required-features = ["tools"]

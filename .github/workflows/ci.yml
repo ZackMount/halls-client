@@ -1,0 +1,54 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - name: Select the Windows linker
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $linker = Join-Path (rustc --print sysroot) 'lib/rustlib/x86_64-pc-windows-msvc/bin/rust-lld.exe'
+          "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linker" >> $env:GITHUB_ENV
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - name: Configure temporary keys and build output
+        run: |
+          echo "HALLS_PROOF_KEYS=$RUNNER_TEMP/halls-keys/proof_keys.h" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/halls-target" >> "$GITHUB_ENV"
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python tools/proof/keygen.py "$RUNNER_TEMP/halls-keys"
+      - run: python tools/compile_entity.py --check
+      - run: cargo fmt --check
+      - run: cargo test --release --all-targets --features tools
+      - run: cargo clippy --all-targets --features tools -- -D warnings
+      - run: python -m unittest discover -s tests -p 'test_*.py'
+      - run: cargo run --release --features tools --example proof_fixture -- "$RUNNER_TEMP/proof"
+      - run: cargo run --release --features tools --example crypto_probe -- "$RUNNER_TEMP/crypto"
+      - run: python tools/check_proof.py --keys "$RUNNER_TEMP/halls-keys" --fixture "$RUNNER_TEMP/proof" --probe "$RUNNER_TEMP/crypto"
+      - run: cargo build --release --locked --bin halls
+      - if: runner.os != 'Windows'
+        run: |
+          cargo build --release --features tools --bin halls-tools
+          cargo build --release --example panic_restore
+          HALLS_BINARY="$CARGO_TARGET_DIR/release/halls" HALLS_TOOLS_BINARY="$CARGO_TARGET_DIR/release/halls-tools" HALLS_PANIC_BINARY="$CARGO_TARGET_DIR/release/examples/panic_restore" python tools/check_terminal.py
